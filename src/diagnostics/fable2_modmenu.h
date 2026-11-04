@@ -50,6 +50,8 @@
 
 #include "fable2_state_probe.h"  // CurrentState() / kMainMenu gating
 
+#include "host_memory.h"  // portable page checks (VirtualQuery / /proc)
+
 namespace fable2::modmenu {
 
 // ---- button bits + selection model ---------------------------------------
@@ -155,8 +157,7 @@ inline bool page_ok_read(const void* p) {
          (m.Protect & (PAGE_READWRITE | PAGE_READONLY | PAGE_WRITECOPY |
                        PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE)) != 0;
 #else
-  (void)p;
-  return true;
+  return fable2::hostmem::IsReadable(p, 1);
 #endif
 }
 inline bool page_ok_write(const void* p) {
@@ -166,8 +167,7 @@ inline bool page_ok_write(const void* p) {
   return m.State == MEM_COMMIT &&
          (m.Protect & (PAGE_READWRITE | PAGE_WRITECOPY)) != 0;
 #else
-  (void)p;
-  return true;
+  return fable2::hostmem::IsWritable(p, 1);
 #endif
 }
 // Region-aligned guest read (faster than the state probe's per-page aread):
@@ -197,8 +197,9 @@ inline bool read_g(const uint8_t* base, uint32_t a, void* dst, size_t n) {
   }
   return true;
 #else
-  (void)base; (void)a;
-  return true;
+  // One kernel-checked copy: fails cleanly if any page is unreadable.
+  return fable2::hostmem::SafeCopy(
+      dst, reinterpret_cast<const void*>(host_addr(base, a)), n);
 #endif
 }
 

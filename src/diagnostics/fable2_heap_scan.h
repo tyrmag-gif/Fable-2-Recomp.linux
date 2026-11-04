@@ -35,6 +35,7 @@
 #include <windows.h>
 #endif
 
+#include "host_memory.h"
 #include "fable2_state_probe.h"  // per-frame UI state sampler (render thread)
 
 namespace fable2::heapscan {
@@ -160,9 +161,11 @@ static void needle_search(uint8_t* hp, size_t len, uint32_t guest_lo) {
   if (g_scan_log) std::fflush(g_scan_log);
 }
 
-__declspec(noinline) void seh_dump_runs(uint8_t* hp, size_t len,
-                                        uint32_t guest_lo) {
+[[gnu::noinline]] void seh_dump_runs(uint8_t* hp, size_t len,
+                                     uint32_t guest_lo) {
+#ifdef _WIN32
   __try {
+#endif
     needle_search(hp, len, guest_lo);
     // --- ASCII runs (length >= 7, must contain a space or be >= 12) ---
     size_t i = 0;
@@ -217,10 +220,14 @@ __declspec(noinline) void seh_dump_runs(uint8_t* hp, size_t len,
         ++i;
       }
     }
+#ifdef _WIN32
   } __except (EXCEPTION_EXECUTE_HANDLER) {
     std::fputs("  (region faulted, skipped)\n", g_scan_log);
     if (g_scan_log) std::fflush(g_scan_log);
   }
+#endif
+  // (Off Windows there is no SEH; the caller only passes regions that
+  // hostmem::QueryRegion reported readable+writable.)
 }
 
 }  // extern "C"
@@ -283,16 +290,17 @@ inline void scan_all() {
   const size_t kMaxScanBytes = 0x100000000ull;  // full 4GB arena (covers image + above)
   bool capped = false;
   while (off < total) {
-    MEMORY_BASIC_INFORMATION mbi{};
-    if (::VirtualQuery(region + off, &mbi, sizeof(mbi)) == 0) break;
-    size_t region_size = mbi.RegionSize ? mbi.RegionSize : 0x1000;
+    fable2::hostmem::Region mr;
+    if (!fable2::hostmem::QueryRegion(region + off, mr)) break;
+    // The region may start before (or reach past) the cursor: scan only the
+    // part from region + off onwards, clamped to the arena.
+    const uintptr_t cur = reinterpret_cast<uintptr_t>(region + off);
+    size_t region_size = mr.size ? static_cast<size_t>(mr.base + mr.size - cur) : 0x1000;
+    if (region_size == 0 || region_size > total - off) region_size = total - off;
     uint32_t guest_lo = static_cast<uint32_t>(off);
-    // Any committed read/write non-guard region could hold runtime-loaded text
-    // (heap is RW; the image's read-only sections are excluded by the RW check).
-    bool candidate =
-        mbi.State == MEM_COMMIT &&
-        (mbi.Protect & (PAGE_READWRITE | PAGE_WRITECOPY)) != 0 &&
-        (mbi.Protect & PAGE_GUARD) == 0;
+    // Any committed read/write region could hold runtime-loaded text (heap is
+    // RW; the image's read-only sections are excluded by the RW check).
+    bool candidate = mr.committed && mr.readable && mr.writable;
     if (candidate) {
       if (scanned_bytes + region_size > kMaxScanBytes) {
         capped = true;
@@ -317,8 +325,7 @@ inline void scan_all() {
     }
     off += region_size;
     if (capped) break;
-    if (mbi.BaseAddress == reinterpret_cast<uint8_t*>(kArenaHostBase + total - 1))
-      break;
+    if (mr.base == kArenaHostBase + total - 1) break;
   }
   char sum[128];
   std::snprintf(sum, sizeof(sum), "==== heap scan (end) regions=%d bytes=%llu%s ====\n",

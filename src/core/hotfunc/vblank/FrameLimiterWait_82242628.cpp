@@ -44,7 +44,11 @@
 //   0x822426E0  wait loop: GpuProgressCheck_82B9BF90 (0 = ready -> leave),
 //               else re-run the readiness test and spin while not ready.
 //   0x8224270C  call sub_82B9BEC8(r1+80), then the epilogue at 0x82242714.
+#ifdef _WIN32
 #include <windows.h>
+#else
+#include <time.h>
+#endif
 
 #include "fable_2_pch.h"
 
@@ -168,8 +172,15 @@ void BuildArgBlock(PPCContext& ctx, uint8_t* base) {
 void SpinPause() {
   // WaitForSingleObjectEx expects 100-ns units; 0 means "no timeout", so
   // bump anything below that to one 100-ns quantum.
+#ifdef _WIN32
   const uint32_t hundredNs = kPauseNs / 100;
   WaitForSingleObjectEx(nullptr, hundredNs > 0 ? hundredNs : 1, TRUE);
+#else
+  // Linux: nanosleep is backed by high-resolution timers and is accurate to
+  // tens of microseconds, so it serves the same purpose directly.
+  timespec ts{0, static_cast<long>(kPauseNs > 0 ? kPauseNs : 1)};
+  nanosleep(&ts, nullptr);
+#endif
 }
 
 // addi r1,r1,144; b __restgprlr_29 (0x82242714).

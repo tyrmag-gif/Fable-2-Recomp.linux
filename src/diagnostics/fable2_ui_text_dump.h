@@ -32,6 +32,8 @@
 #include <windows.h>
 #endif
 
+#include "host_memory.h"  // portable page checks (VirtualQuery / /proc)
+
 namespace fable2::uitext {
 
 inline bool page_readable(const void* p) {
@@ -42,8 +44,7 @@ inline bool page_readable(const void* p) {
          (mbi.Protect & (PAGE_READWRITE | PAGE_READONLY | PAGE_WRITECOPY |
                          PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE)) != 0;
 #else
-  (void)p;
-  return true;
+  return fable2::hostmem::IsReadable(p, 1);
 #endif
 }
 

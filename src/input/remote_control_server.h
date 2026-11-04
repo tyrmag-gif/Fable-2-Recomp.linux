@@ -60,6 +60,7 @@ inline void CloseSock(sock_t s) {
 #else
 #include <arpa/inet.h>
 #include <netinet/in.h>
+#include <netinet/tcp.h>  // TCP_NODELAY
 #include <sys/socket.h>
 #include <unistd.h>
 using sock_t = int;
@@ -122,11 +123,20 @@ struct Value {
   std::vector<Value> arr;
   std::vector<std::pair<std::string, Value>> obj;
 
-  const Value* Find(std::string_view key) const {
-    for (const auto& kv : obj)
-      if (kv.first == key) return &kv.second;
-    return nullptr;
-  }
+  // Special members are declared here and defaulted after the struct, where
+  // Value is complete. libstdc++ (unlike MSVC's STL) instantiates
+  // std::pair<std::string, Value> while checking the implicit ones, and that
+  // pair needs a complete Value.
+  Value();
+  Value(const Value&);
+  Value(Value&&) noexcept;
+  Value& operator=(const Value&);
+  Value& operator=(Value&&) noexcept;
+  ~Value();
+
+  // Defined after the struct: iterating `obj` needs Value to be complete,
+  // which libstdc++ (unlike MSVC's STL) enforces inside the class body.
+  const Value* Find(std::string_view key) const;
   const std::string* FindStr(std::string_view key) const {
     const Value* v = Find(key);
     return (v && v->type == Type::String) ? &v->str : nullptr;
@@ -153,6 +163,19 @@ struct Value {
     return def;
   }
 };
+
+inline Value::Value() = default;
+inline Value::Value(const Value&) = default;
+inline Value::Value(Value&&) noexcept = default;
+inline Value& Value::operator=(const Value&) = default;
+inline Value& Value::operator=(Value&&) noexcept = default;
+inline Value::~Value() = default;
+
+inline const Value* Value::Find(std::string_view key) const {
+  for (const auto& kv : obj)
+    if (kv.first == key) return &kv.second;
+  return nullptr;
+}
 
 class Parser {
  public:

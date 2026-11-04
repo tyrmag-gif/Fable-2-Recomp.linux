@@ -103,6 +103,22 @@ endif()
 # per-configuration variant: rexgpu-xenosd.dll for Debug, rexgpu-xenos.dll
 # for Release). Without it the game runs with no GPU emulation.
 rexglue_setup_target(fable_2 GPU_PLUGINS xenos)
+# Linux: the SDK links fable_2 with RUNPATH $ORIGIN but (unlike Windows and
+# macOS) does not stage the shared runtime next to it, so copy it here. On
+# Linux the xenos plugin (librexgpu-xenos.so) is Vulkan-only, so the default
+# --gpu_plugin=xenos already renders with Vulkan.
+if(UNIX AND NOT APPLE)
+    foreach(_fable2_runtime_lib rex::runtime rexruntime rex::TracyClient TracyClient)
+        if(TARGET ${_fable2_runtime_lib})
+            add_custom_command(TARGET fable_2 POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    $<TARGET_FILE:${_fable2_runtime_lib}>
+                    $<TARGET_FILE_DIR:fable_2>
+                COMMENT "Staging ${_fable2_runtime_lib} next to fable_2"
+                VERBATIM)
+        endif()
+    endforeach()
+endif()
 add_custom_command(TARGET fable_2 POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "${CMAKE_CURRENT_BINARY_DIR}/fable2_build.json"
@@ -185,6 +201,7 @@ endif()
 # Stage a copy of the README + the function-tracing launcher next to the exe
 # so anyone who gets the build folder (without the repo) knows how to run
 # the game and how to capture guest function-call logs.
+if(WIN32)
 add_custom_command(TARGET fable_2 POST_BUILD
   COMMAND ${CMAKE_COMMAND} -E copy_if_different
           ${CMAKE_CURRENT_SOURCE_DIR}/README.md
@@ -197,6 +214,19 @@ add_custom_command(TARGET fable_2 POST_BUILD
           $<TARGET_FILE_DIR:fable_2>/run_profiler.cmd
   COMMENT "Staging README.md + fable2-functrace.cmd + run_profiler.cmd next to fable_2.exe"
 )
+else()
+# Linux: shell equivalents of the .cmd launchers (tools/linux/).
+add_custom_command(TARGET fable_2 POST_BUILD
+  COMMAND ${CMAKE_COMMAND} -E copy_if_different
+          ${CMAKE_CURRENT_SOURCE_DIR}/README.md
+          ${CMAKE_CURRENT_SOURCE_DIR}/docs/LINUX.md
+          ${CMAKE_CURRENT_SOURCE_DIR}/tools/linux/fable2.sh
+          ${CMAKE_CURRENT_SOURCE_DIR}/tools/linux/fable2-functrace.sh
+          ${CMAKE_CURRENT_SOURCE_DIR}/tools/linux/StartWithoutAudio.sh
+          $<TARGET_FILE_DIR:fable_2>
+  COMMENT "Staging README.md, docs/LINUX.md and the Linux launch scripts next to fable_2"
+)
+endif()
 
 # --- F5 external-Lua runner (src/lua/) -----------------------------------
 # src/core/fable2_f5_lua.h runs an external script (cvar `f5_lua_path`, default
@@ -312,7 +342,7 @@ endif()
 # Panic/assert messages embed __FILE__. Map the source tree out so the path is
 # relative to the repo root, making the binary hash independent of where the
 # tree is checked out (part of the cert-free reproducible-build strategy).
-if(WIN32 AND CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     target_compile_options(fable_2 PRIVATE
         -ffile-prefix-map=${CMAKE_CURRENT_SOURCE_DIR}=
         -fdebug-prefix-map=${CMAKE_CURRENT_SOURCE_DIR}=
@@ -337,10 +367,13 @@ endif()
 add_custom_command(TARGET fable_2 POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
             "${CMAKE_CURRENT_SOURCE_DIR}/assets/app-icon.png"
-            "$<TARGET_FILE_DIR:fable_2>/app-icon.png"
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            "${CMAKE_CURRENT_SOURCE_DIR}/tools/StartWithoutAudio.cmd"
-            "$<TARGET_FILE_DIR:fable_2>/StartWithoutAudio.cmd")
+            "$<TARGET_FILE_DIR:fable_2>/app-icon.png")
+if(WIN32)
+    add_custom_command(TARGET fable_2 POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${CMAKE_CURRENT_SOURCE_DIR}/tools/StartWithoutAudio.cmd"
+                "$<TARGET_FILE_DIR:fable_2>/StartWithoutAudio.cmd")
+endif()
 
 # --- Vulkan renderer: Stage 2 (source-built plugin, swappable at launch) --
 # The prebuilt plugin above (GPU_PLUGINS xenos) is D3D12-only. The Vulkan

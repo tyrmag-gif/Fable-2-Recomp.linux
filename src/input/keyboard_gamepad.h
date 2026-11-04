@@ -18,7 +18,8 @@
 // or a mouse-button name ("LMB"/"RMB"/"MMB", plus "XMB1"/"XMB2" for the side
 // buttons; mouse names are also accepted case-insensitively, see
 // input_detail::ParseKey). Mouse-button state is polled with
-// GetAsyncKeyState, the same path as keyboard keys. Button is a guest gamepad
+// GetAsyncKeyState on Windows (from the window's input events elsewhere, see
+// host_input_tracker.h), the same path as keyboard keys. Button is a guest gamepad
 // button name (A/B/X/Y/LB/RB/LT/RT/Up/Down/Left/Right/Start/Back/L3/R3/
 // StickUp/StickDown/StickLeft/StickRight).
 // The cvar's default is seeded from fable2_config.toml [input] at startup
@@ -52,6 +53,8 @@
 
 #ifdef _WIN32
 #include <windows.h>
+#else
+#include "host_input_tracker.h"  // SDL window events (X11 / Wayland)
 #endif
 
 // Declared here, defined in main.cpp (REXCVAR_DEFINE_* must live in a .cpp).
@@ -235,6 +238,14 @@ class KeyboardGamepadDriver final : public rex::input::InputDriver {
 
   X_STATUS Setup() override { return X_STATUS_SUCCESS; }
 
+#ifndef _WIN32
+  // Non-Windows hosts have no global key state to poll, so the driver
+  // listens to the SDK window's input events instead (host_input_tracker.h).
+  void OnWindowAvailable(rex::ui::Window* window) override {
+    tracker_.Attach(window, window_z_order());
+  }
+#endif
+
   void EnumerateDevices(std::vector<DeviceInfo>& out) override {
     RefreshBindings();
     if (bindings_.empty() && !REXCVAR_GET(mouse_look)) return;  // nothing to do
@@ -364,6 +375,54 @@ class KeyboardGamepadDriver final : public rex::input::InputDriver {
     } else {
       mouse_centered_ = false;  // re-prime on (re)focus to avoid a jump
     }
+#else
+    // Same behaviour as the Windows path above, driven by the SDK window's
+    // input events (host_input_tracker.h) instead of GetAsyncKeyState, and by
+    // pointer lock (relative mouse mode) instead of SetCursorPos recentering.
+    const bool focused = tracker_.focused();
+
+    fable2::f5lua::poll_f5(focused && tracker_.IsDown(static_cast<uint16_t>(rex::ui::VirtualKey::kF5)));
+
+    uint16_t unlock_vk = static_cast<uint16_t>(
+        rex::ui::ParseVirtualKey(REXCVAR_GET(mouse_unlock_key)));
+    bool has_unlock_key = unlock_vk != 0;
+    if (focused) {
+      bool unlock_down = has_unlock_key && tracker_.IsDown(unlock_vk);
+      if (unlock_down && !unlock_down_prev_) console_open_ = !console_open_;
+      unlock_down_prev_ = unlock_down;
+    }
+
+    if (focused) {
+      for (const auto& m : bindings_) {
+        if (has_unlock_key && m.vk == unlock_vk) continue;  // not gamepad input
+        if (!tracker_.IsDown(m.vk)) continue;                 // not held
+        if (m.button != 0) {
+          buttons |= m.button;
+        } else if (m.trigger == 'L') {
+          left_trigger = 0xFF;
+        } else if (m.trigger == 'R') {
+          right_trigger = 0xFF;
+        } else if (m.axis == 1) {
+          lx += m.axis_sign * input_detail::kStickMax;
+        } else if (m.axis == 2) {
+          ly += m.axis_sign * input_detail::kStickMax;
+        }
+      }
+    }
+    lx = input_detail::ClampStick(lx);
+    ly = input_detail::ClampStick(ly);
+
+    const bool looking = focused && REXCVAR_GET(mouse_look) && !console_open_;
+    tracker_.SetMouseLook(looking);
+    float mdx = 0.0f;
+    float mdy = 0.0f;
+    tracker_.TakeMouseDelta(mdx, mdy);  // always drained (no backlog snap)
+    if (looking) {
+      // Fable 2 inverts Y, so mouse-up (dy<0) maps to +ry (look up).
+      const int32_t scale = REXCVAR_GET(mouse_look_scale);
+      rx = input_detail::ClampStick(static_cast<int32_t>(mdx * scale));
+      ry = input_detail::ClampStick(static_cast<int32_t>(-mdy * scale));
+    }
 #endif
 
     out_state->packet_number.set(packet_number_++);
@@ -423,6 +482,9 @@ class KeyboardGamepadDriver final : public rex::input::InputDriver {
   bool cursor_hidden_ = false;   // set while the SDK window cursor is hidden
   bool console_open_ = false;    // debug menu open -> mouse lock released
   bool unlock_down_prev_ = false;  // prev-poll state of the unlock key
+#ifndef _WIN32
+  HostInputTracker tracker_;  // window-event key/mouse state (non-Windows)
+#endif
   // The game window (from the runtime's display window), used for recentering
   // and cursor visibility.
   rex::ui::Window* GameWindow() {

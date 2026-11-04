@@ -49,6 +49,8 @@
 
 #include "fable2_ui_render_probe.h"
 
+#include "host_memory.h"  // portable page checks (VirtualQuery / /proc)
+
 namespace fable2::textappend {
 
 // ---------------------------------------------------------------------------
@@ -193,9 +195,7 @@ inline bool wr(uint64_t h, size_t n) {
   }
   return true;
 #else
-  (void)h;
-  (void)n;
-  return true;
+  return fable2::hostmem::IsWritable(reinterpret_cast<const void*>(h), n);
 #endif
 }
 
@@ -215,9 +215,7 @@ inline bool rdable(uint64_t h, size_t n) {
   }
   return true;
 #else
-  (void)h;
-  (void)n;
-  return true;
+  return fable2::hostmem::IsReadable(reinterpret_cast<const void*>(h), n);
 #endif
 }
 

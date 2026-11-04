@@ -50,6 +50,8 @@
 
 #include <rex/logging/macros.h>  // REXSYS_* logging
 
+#include "host_path.h"  // case-insensitive lookup on Linux
+
 namespace fable2::manifestheal {
 
 namespace detail {
@@ -77,7 +79,9 @@ inline const char* DetectEol(const std::string& contents) {
 // fails hard: problems are logged and the startup continues with whatever
 // manifest exists.
 inline int EnsureComplete(const std::filesystem::path& game_data_root) {
-  const std::filesystem::path manifest = game_data_root / "data" / "dir.manifest";
+  // Case-insensitive on Linux: the disc may spell it differently.
+  const std::filesystem::path manifest =
+      hostpath::ResolvePath(game_data_root, std::filesystem::path("data") / "dir.manifest");
   std::error_code ec;
   const std::filesystem::path data_root = manifest.parent_path();
   if (!std::filesystem::is_directory(data_root, ec)) {

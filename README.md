@@ -8,6 +8,8 @@ Recompilation of Fable 2 (Xbox 360, title ID 4D5307F1) using the [ReXGlue SDK](h
 
 # Playing the game
 
+> **Linux:** a native Linux build (no Wine) is described in [docs/LINUX.md](docs/LINUX.md).
+
 You need your own Fable 2 GOTY disc image (`.iso`) and about 7 GB of free space.
 
 1. Download the `windows` zip from the [latest release](https://github.com/himdo/Fable-2-Recomp/releases/latest) and unzip it anywhere.
@@ -38,7 +40,7 @@ Original GOTY USA/Europe and German GOTY dumps are supported by the default
 [ ] Increased performance / framerate\
 [x] Hero / Dog Texture bug fix (upstream renderer, verified on German GOTY)\
 [ ] Vulkan support\
-[ ] Linux Builds\
+[~] Linux Builds (experimental, native Vulkan; see [Linux](docs/LINUX.md))\
 [x] Custom commands to aid in debugging\
 [ ] Improved Graphics rendering\
 [ ] Custom menu(s) / modifying menus for extra functionality (like closing the game)\

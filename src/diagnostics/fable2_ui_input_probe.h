@@ -51,6 +51,8 @@
 
 #include <rex/ppc/context.h>
 
+#include "host_memory.h"
+
 namespace fable2::uip {
 
 inline bool enabled() {
@@ -452,13 +454,17 @@ inline bool gread(const uint8_t* /*base*/, uint32_t addr, void* dst, size_t n) {
   // Reject protections that fault on read (NOACCESS, guard pages).
   if (mbi.Protect == PAGE_NOACCESS) return false;
   if (mbi.Protect & PAGE_GUARD) return false;
-#endif
   __try {
     std::memcpy(dst, h, n);
     return true;
   } __except (EXCEPTION_EXECUTE_HANDLER) {
     return false;
   }
+#else
+  // No SEH off Windows: copy through the kernel, which fails cleanly on an
+  // unreadable page instead of faulting (host_memory.h).
+  return fable2::hostmem::SafeCopy(dst, h, n);
+#endif
 }
 
 inline bool valid_addr(uint32_t a) {

@@ -26,6 +26,8 @@
 #include <string>
 #include <string_view>
 
+#include "host_path.h"  // case-insensitive content lookup on Linux
+
 namespace fable2::xexverify {
 
 // Only catalogue entries validated for this guest-code group can be enabled.
@@ -66,11 +68,11 @@ inline bool HasCompatibleContent(const std::filesystem::path& root, std::string_
   if (!version || !IsEnabledVersion(*version)) return false;
   const auto file = [&](std::string_view path) {
     std::error_code ec;
-    return std::filesystem::is_regular_file(root / path, ec) && !ec;
+    return std::filesystem::is_regular_file(hostpath::ResolvePath(root, path), ec) && !ec;
   };
   const auto directory = [&](std::string_view path) {
     std::error_code ec;
-    return std::filesystem::is_directory(root / path, ec) && !ec;
+    return std::filesystem::is_directory(hostpath::ResolvePath(root, path), ec) && !ec;
   };
   const bool has_rejection_rule = !version->reject_files.empty() ||
       !version->reject_directories.empty();

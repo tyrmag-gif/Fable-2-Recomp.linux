@@ -26,6 +26,8 @@
 
 #include "fable2_font_probe.h"
 
+#include "host_memory.h"  // portable page checks (VirtualQuery / /proc)
+
 namespace fable2::glyphprobe {
 
 // Cache the env read: the hook fires on the render thread for every text
@@ -98,9 +100,7 @@ inline bool wr(uint64_t h, size_t n) {
   }
   return true;
 #else
-  (void)h;
-  (void)n;
-  return true;
+  return fable2::hostmem::IsWritable(reinterpret_cast<const void*>(h), n);
 #endif
 }
 

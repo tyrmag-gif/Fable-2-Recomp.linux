@@ -29,6 +29,8 @@
 
 #include <rex/ppc/context.h>
 
+#include "host_memory.h"
+
 #ifdef _WIN32
 #include <windows.h>
 #endif
@@ -78,9 +80,10 @@ inline bool host_writable(uint64_t h, size_t len) {
   if (h < start || h + len > start + mbi.RegionSize) return false;
   return true;
 #else
-  (void)h;
-  (void)len;
-  return false;
+  fable2::hostmem::Region r;
+  if (!fable2::hostmem::QueryRegion(reinterpret_cast<const void*>(h), r)) return false;
+  if (!r.committed || !r.writable) return false;
+  return h >= r.base && h + len <= r.base + r.size;
 #endif
 }
 
@@ -261,10 +264,9 @@ bool redirect_prompt(const uint8_t* base, uint32_t S) {
     // The guest arena is commit-on-fault; commit our slot before writing.
     const uint64_t hb = host_addr(base, kNewBuf);
     if (!host_writable(hb, total)) {
-      void* p = VirtualAlloc((void*)hb, 256, MEM_COMMIT, PAGE_READWRITE);
-      if (!p)
-        p = VirtualAlloc((void*)hb, 256, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
-      if (!p || !host_writable(hb, total)) return false;
+      if (!fable2::hostmem::CommitReadWrite(reinterpret_cast<void*>(hb), 256) ||
+          !host_writable(hb, total))
+        return false;
     }
   }
   gwrite(base, kNewBuf, newstr, total);
