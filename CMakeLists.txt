@@ -146,6 +146,13 @@ if(CMAKE_BUILD_TYPE STREQUAL "Debug")
     target_compile_definitions(fable_2 PRIVATE FABLE2_REMOTE_CONTROL)
 endif()
 
+# Falling off the end of a non-void function is undefined behaviour that clang
+# turns into a fall-through into the next function at -O3 (it crashed the
+# Linux build at startup). Make it a hard error so it cannot slip in again.
+if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+    target_compile_options(fable_2 PRIVATE -Werror=return-type)
+endif()
+
 # --- Recomp-level patches (Xenia code-region patches, made effective) ------
 # This is a RECOMP: guest .text is never executed, so Xenia code patches
 # (byte writes to .text) are inert at runtime. tools/apply_recomp_patches.py
